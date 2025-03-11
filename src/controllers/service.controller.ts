@@ -27,23 +27,34 @@ const isValidUrl = (url: string) => {
 
 export const createService = async (req: Request, res: Response) => {
   try {
+    console.log("Solicitud recibida:", req.body);
+    console.log("Archivo recibido:", req.file);
+
     const { name, description, price, points, duration, category, stock, imageUrl } = req.body;
     let finalImageUrl = '';
 
-    // Manejo de imágenes
     if (req.file) {
-      const uploadResult = await uploadToCloudinary(req.file);
-      finalImageUrl = uploadResult.secure_url;
+      console.log("Subiendo imagen a Cloudinary...");
+      try {
+        const uploadResult = await uploadToCloudinary(req.file);
+        finalImageUrl = uploadResult.secure_url;
+        console.log("Imagen subida con éxito:", finalImageUrl);
+      } catch (uploadError) {
+        console.error("Error al subir imagen a Cloudinary:", uploadError);
+        return res.status(500).json({ error: "Error al subir imagen" });
+      }
     } else if (imageUrl) {
       if (imageUrl === 'none') {
         finalImageUrl = '';
       } else if (isValidUrl(imageUrl)) {
         finalImageUrl = imageUrl;
       } else {
-        throw new Error('URL de imagen inválida');
+        console.error("URL de imagen inválida:", imageUrl);
+        return res.status(400).json({ error: "URL de imagen inválida" });
       }
     }
 
+    console.log("Guardando servicio en la base de datos...");
     const newService = new Service({
       name,
       description,
@@ -56,14 +67,17 @@ export const createService = async (req: Request, res: Response) => {
     });
 
     await newService.save();
+    console.log("Servicio guardado en la base de datos:", newService);
     res.status(201).json(newService);
   } catch (error: any) {
+    console.error("Error en createService:", error);
     res.status(500).json({
       success: false,
-      message: error.message || 'Error al crear servicio'
+      message: error.message || "Error al crear servicio"
     });
   }
 };
+
 
 export const getServices = async (req: Request, res: Response) => {
   try {

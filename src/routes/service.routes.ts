@@ -11,8 +11,9 @@ import multer from 'multer';
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 } // Límite de 5MB
+  limits: { fileSize: 10 * 1024 * 1024 } // Límite de 10MB
 });
+
 
 const router = express.Router();
 
@@ -20,9 +21,16 @@ const router = express.Router();
 router.post(
   '/services',
   authMiddleware,
-  upload.single('image'), // Campo para subir archivo
+  upload.single('image'),
+  (req, _, next) => {
+    console.log("Solicitud POST /services recibida");
+    console.log("Body:", req.body);
+    console.log("Archivo:", req.file);
+    next();
+  },
   createService
 );
+
 
 router.get('/services', authMiddleware, getServices);
 
