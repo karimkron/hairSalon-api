@@ -1,4 +1,4 @@
-// models/Service.ts
+
 import mongoose from 'mongoose';
 
 export interface IService {
@@ -8,7 +8,7 @@ export interface IService {
   points: number;
   duration: string;
   category: string;
-  image: string; // Ruta de la imagen
+  image: string; // Campo opcional
   stock: boolean;
 }
 
@@ -19,7 +19,7 @@ const serviceSchema = new mongoose.Schema<IService>({
   points: { type: Number, required: true },
   duration: { type: String, required: true },
   category: { type: String, required: true },
-  image: { type: String, required: true }, // Ruta de la imagen
+  image: { type: String, default: '' }, // Cambiado a opcional
   stock: { type: Boolean, default: true },
 });
 

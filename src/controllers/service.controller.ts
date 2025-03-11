@@ -1,33 +1,67 @@
-// controllers/service.controller.ts
+
 import { Request, Response } from 'express';
 import { Service } from '../models/Service';
-import path from 'path';
+import cloudinary from '../config/cloudinary';
+
+const uploadToCloudinary = async (file: Express.Multer.File) => {
+  return new Promise<any>((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      { folder: 'services' },
+      (error, result) => {
+        if (error) reject(error);
+        resolve(result);
+      }
+    );
+    stream.end(file.buffer);
+  });
+};
+
+const isValidUrl = (url: string) => {
+  try {
+    new URL(url);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 export const createService = async (req: Request, res: Response) => {
   try {
-    const { name, description, price, points, duration, category, stock } = req.body;
+    const { name, description, price, points, duration, category, stock, imageUrl } = req.body;
+    let finalImageUrl = '';
 
-    if (!req.file) {
-      return res.status(400).json({ message: 'No se proporcionó una imagen' });
+    // Manejo de imágenes
+    if (req.file) {
+      const uploadResult = await uploadToCloudinary(req.file);
+      finalImageUrl = uploadResult.secure_url;
+    } else if (imageUrl) {
+      if (imageUrl === 'none') {
+        finalImageUrl = '';
+      } else if (isValidUrl(imageUrl)) {
+        finalImageUrl = imageUrl;
+      } else {
+        throw new Error('URL de imagen inválida');
+      }
     }
-
-    const imagePath = req.file.path; // Ruta de la imagen en el servidor
 
     const newService = new Service({
       name,
       description,
-      price,
-      points,
+      price: Number(price),
+      points: Number(points),
       duration,
       category,
-      image: imagePath, // Guardar la ruta de la imagen en la base de datos
-      stock,
+      image: finalImageUrl,
+      stock: stock === 'true',
     });
 
     await newService.save();
     res.status(201).json(newService);
-  } catch (error) {
-    res.status(500).json({ message: 'Error al crear el servicio', error });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error al crear servicio'
+    });
   }
 };
 
@@ -35,32 +69,52 @@ export const getServices = async (req: Request, res: Response) => {
   try {
     const services = await Service.find();
     res.status(200).json(services);
-  } catch (error) {
-    res.status(500).json({ message: 'Error al obtener los servicios', error });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error al obtener servicios'
+    });
   }
 };
 
 export const updateService = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, description, price, points, duration, category, stock } = req.body;
+    const { name, description, price, points, duration, category, stock, imageUrl } = req.body;
+    let finalImageUrl = req.body.image;
 
-    let imagePath = req.body.image; // Mantener la imagen existente si no se sube una nueva
-
-    // Si se sube una nueva imagen, actualizar la ruta
     if (req.file) {
-      imagePath = req.file.path;
+      const uploadResult = await uploadToCloudinary(req.file);
+      finalImageUrl = uploadResult.secure_url;
+    } else if (imageUrl) {
+      if (imageUrl === 'none') {
+        finalImageUrl = '';
+      } else if (!isValidUrl(imageUrl)) {
+        throw new Error('URL de imagen inválida');
+      }
     }
 
     const updatedService = await Service.findByIdAndUpdate(
       id,
-      { name, description, price, points, duration, category, image: imagePath, stock },
+      {
+        name,
+        description,
+        price: Number(price),
+        points: Number(points),
+        duration,
+        category,
+        image: finalImageUrl,
+        stock: stock === 'true',
+      },
       { new: true }
     );
-
+    
     res.status(200).json(updatedService);
-  } catch (error) {
-    res.status(500).json({ message: 'Error al actualizar el servicio', error });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error al actualizar servicio'
+    });
   }
 };
 
@@ -68,8 +122,11 @@ export const deleteService = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     await Service.findByIdAndDelete(id);
-    res.status(200).json({ message: 'Servicio eliminado correctamente' });
-  } catch (error) {
-    res.status(500).json({ message: 'Error al eliminar el servicio', error });
+    res.status(200).json({ success: true, message: 'Servicio eliminado' });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error al eliminar servicio'
+    });
   }
 };
