@@ -7,8 +7,15 @@ import serviceRoutes from './routes/service.routes';
 
 const app = express();
 
+const corsOptions = {
+  origin: 'https://hairsalon-web.onrender.com',  // Aquí debe ir la URL de tu frontend
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
+
+
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' })); // Permitir subir imágenes más grandes
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
