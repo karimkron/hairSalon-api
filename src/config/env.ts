@@ -9,6 +9,6 @@ export const config = {
   emailUser: process.env.EMAIL_USER || '',
   emailPassword: process.env.EMAIL_PASSWORD || '',
   emailFrom: process.env.EMAIL_FROM || '',
-  resetCodeExpiry: Number(process.env.RESET_CODE_EXPIRY) || 30
+  resetCodeExpiry: Number(process.env.RESET_CODE_EXPIRY) || 20, // Expira en 20 minutos
 };
 

@@ -3,16 +3,17 @@ import mongoose from 'mongoose';
 const resetCodeSchema = new mongoose.Schema({
   email: {
     type: String,
-    required: true
+    required: true,
+    unique: true, // Asegura que solo haya un código por email
   },
   code: {
     type: String,
-    required: true
+    required: true,
   },
   expiresAt: {
     type: Date,
-    required: true
-  }
+    required: true,
+  },
 });
 
 export const ResetCode = mongoose.model('ResetCode', resetCodeSchema);
