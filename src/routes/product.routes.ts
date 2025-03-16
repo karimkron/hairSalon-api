@@ -15,9 +15,9 @@ const upload = multer({
 
 const router = express.Router();
 
-router.post('/', authMiddleware, upload.single('image'), createProduct);
+router.post('/products', authMiddleware, upload.single('image'), createProduct);
 router.get('/products', authMiddleware, getProducts);
-router.put('/:id', authMiddleware, upload.single('image'), updateProduct);
-router.delete('/:id', authMiddleware, deleteProduct);
+router.put('/products/:id', authMiddleware, upload.single('image'), updateProduct);
+router.delete('/products/:id', authMiddleware, deleteProduct);
 
 export default router;
