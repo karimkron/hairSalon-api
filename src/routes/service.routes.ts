@@ -1,4 +1,3 @@
-
 import express from 'express';
 import { authMiddleware } from '../middleware/auth.middleware';
 import { 
@@ -18,11 +17,7 @@ const upload = multer({
 const router = express.Router();
 
 // Rutas protegidas
-router.post(
-  '/services',
-  authMiddleware,
-  upload.single('image'),
-  (req, _, next) => {
+router.post('/services', authMiddleware, upload.single('image'), (req, _, next) => {
     console.log("Solicitud POST /services recibida");
     console.log("Body:", req.body);
     console.log("Archivo:", req.file);

@@ -1,17 +1,17 @@
 import mongoose from 'mongoose';
 
-// Definimos la interfaz para el usuario
 export interface IUser {
   name: string;
   email: string;
   password: string;
   phone: string;
   points: number;
-  role: string;
+  role: 'user' | 'admin' | 'superadmin';
+  rank: 'bronce' | 'plata' | 'oro' | 'diamante';
+  isBlocked: boolean;
   createdAt: Date;
 }
 
-// Creamos el esquema de MongoDB
 const userSchema = new mongoose.Schema<IUser>({
   name: {
     type: String,
@@ -42,11 +42,19 @@ const userSchema = new mongoose.Schema<IUser>({
     enum: ['user', 'admin', 'superadmin'],
     default: 'user',
   },
+  rank: {
+    type: String,
+    enum: ['bronce', 'plata', 'oro', 'diamante'],
+    default: 'bronce',
+  },
+  isBlocked: {
+    type: Boolean,
+    default: false,
+  },
   createdAt: {
     type: Date,
     default: Date.now,
   },
 });
 
-// Creamos el modelo a partir del esquema
 export const User = mongoose.model<IUser>('User', userSchema);

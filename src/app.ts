@@ -5,6 +5,8 @@ import { config } from './config/env';
 import authRoutes from './routes/auth.routes';
 import serviceRoutes from './routes/service.routes';
 import adminRoutes from './routes/admin.routes'; // Importamos las nuevas rutas de administradores
+import productRoutes from './routes/product.routes'; // Importamos las rutas de productos
+import userRoutes from './routes/user.routes';
 
 const app = express();
 
@@ -24,6 +26,8 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use('/api', authRoutes);       // Rutas de autenticación
 app.use('/api', serviceRoutes);    // Rutas de servicios
 app.use('/api', adminRoutes);      // Nuevas rutas de administradores
+app.use('/api', productRoutes);  // Rutas de productos
+app.use('/api', userRoutes);       // Rutas de usuarios
 
 // Ruta de health check
 app.get('/health', (req, res) => {

@@ -1,4 +1,3 @@
-
 import { Request, Response } from 'express';
 import { Service } from '../models/Service';
 import cloudinary from '../config/cloudinary';
@@ -27,20 +26,15 @@ const isValidUrl = (url: string) => {
 
 export const createService = async (req: Request, res: Response) => {
   try {
-    console.log("Solicitud recibida:", req.body);
-    console.log("Archivo recibido:", req.file);
-
-    const { name, description, price, points, duration, category, stock, imageUrl } = req.body;
+    const { name, description, price, points, duration, category, imageUrl } = req.body;
     let finalImageUrl = '';
 
     if (req.file) {
-      console.log("Subiendo imagen a Cloudinary...");
       try {
         const uploadResult = await uploadToCloudinary(req.file);
         finalImageUrl = uploadResult.secure_url;
-        console.log("Imagen subida con éxito:", finalImageUrl);
       } catch (uploadError) {
-        console.error("Error al subir imagen a Cloudinary:", uploadError);
+        console.error("Error al subir imagen:", uploadError);
         return res.status(500).json({ error: "Error al subir imagen" });
       }
     } else if (imageUrl) {
@@ -49,35 +43,29 @@ export const createService = async (req: Request, res: Response) => {
       } else if (isValidUrl(imageUrl)) {
         finalImageUrl = imageUrl;
       } else {
-        console.error("URL de imagen inválida:", imageUrl);
         return res.status(400).json({ error: "URL de imagen inválida" });
       }
     }
 
-    console.log("Guardando servicio en la base de datos...");
     const newService = new Service({
       name,
       description,
       price: Number(price),
       points: Number(points),
-      duration,
+      duration: Number(duration),
       category,
       image: finalImageUrl,
-      stock: stock === 'true',
     });
 
     await newService.save();
-    console.log("Servicio guardado en la base de datos:", newService);
     res.status(201).json(newService);
   } catch (error: any) {
-    console.error("Error en createService:", error);
     res.status(500).json({
       success: false,
       message: error.message || "Error al crear servicio"
     });
   }
 };
-
 
 export const getServices = async (req: Request, res: Response) => {
   try {
@@ -94,8 +82,8 @@ export const getServices = async (req: Request, res: Response) => {
 export const updateService = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, description, price, points, duration, category, stock, imageUrl } = req.body;
-    let finalImageUrl = req.body.image;
+    const { name, description, price, points, duration, category, imageUrl } = req.body;
+    let finalImageUrl = '';
 
     if (req.file) {
       const uploadResult = await uploadToCloudinary(req.file);
@@ -103,7 +91,9 @@ export const updateService = async (req: Request, res: Response) => {
     } else if (imageUrl) {
       if (imageUrl === 'none') {
         finalImageUrl = '';
-      } else if (!isValidUrl(imageUrl)) {
+      } else if (isValidUrl(imageUrl)) {
+        finalImageUrl = imageUrl;
+      } else {
         throw new Error('URL de imagen inválida');
       }
     }
@@ -115,10 +105,9 @@ export const updateService = async (req: Request, res: Response) => {
         description,
         price: Number(price),
         points: Number(points),
-        duration,
+        duration: Number(duration),
         category,
         image: finalImageUrl,
-        stock: stock === 'true',
       },
       { new: true }
     );
