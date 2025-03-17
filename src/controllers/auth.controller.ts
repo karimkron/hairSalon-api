@@ -75,6 +75,17 @@ export const login = async (req: Request, res: Response) => {
       });
     }
 
+    // Verificar si la cuenta está bloqueada
+    if (user.isBlocked) {
+      // Buscar el correo del superadmin
+      const superadmin = await User.findOne({ role: 'superadmin' });
+      const superadminEmail = superadmin ? superadmin.email : 'soporte@peluqueria.com';
+
+      return res.status(403).json({
+        message: `Tu cuenta ha sido bloqueada. Contacta con el soporte: ${superadminEmail}`,
+      });
+    }
+
     // Verificar contraseña
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) {
@@ -90,18 +101,16 @@ export const login = async (req: Request, res: Response) => {
       { expiresIn: '24h' }
     );
 
-    // Enviar respuesta sin incluir la contraseña
-    const userResponse = {
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      phone: user.phone,
-      points: user.points,
-      role: user.role, // Incluimos el rol en la respuesta
-    };
-
+    // Enviar respuesta con el usuario y el token
     res.json({
-      user: userResponse,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        points: user.points,
+        role: user.role, // Incluimos el rol en la respuesta
+      },
       token,
     });
   } catch (error) {
@@ -111,7 +120,6 @@ export const login = async (req: Request, res: Response) => {
     });
   }
 };
-
 
 // Función para solicitar un código de recuperación
 export const requestResetCode = async (req: Request, res: Response) => {
@@ -149,7 +157,6 @@ export const requestResetCode = async (req: Request, res: Response) => {
     });
   }
 };
-
 
 // Función para verificar el código de recuperación
 export const verifyResetCode = async (req: Request, res: Response) => {
