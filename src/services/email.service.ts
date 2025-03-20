@@ -54,3 +54,23 @@ export const sendAdminCodeEmail = async (
 
   await transporter.sendMail(mailOptions);
 };
+
+export const sendVerificationCode = async (email: string, code: string) => {
+  const mailOptions = {
+    from: config.emailFrom,
+    to: email,
+    subject: 'Código de Verificación de Correo Electrónico',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #B45309;">Verificación de Correo Electrónico</h2>
+        <p>Gracias por registrarte. Usa el siguiente código para verificar tu correo electrónico:</p>
+        <div style="background-color: #F3F4F6; padding: 20px; text-align: center; margin: 20px 0;">
+          <h1 style="color: #B45309; font-size: 32px; letter-spacing: 5px;">${code}</h1>
+        </div>
+        <p>Este código expirará en 30 minutos.</p>
+      </div>
+    `,
+  };
+
+  await transporter.sendMail(mailOptions);
+};

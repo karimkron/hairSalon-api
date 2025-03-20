@@ -9,6 +9,7 @@ export interface IUser {
   role: 'user' | 'admin' | 'superadmin';
   rank: 'bronce' | 'plata' | 'oro' | 'diamante';
   isBlocked: boolean;
+  isVerified: boolean; // Nuevo campo para verificación de correo
   createdAt: Date;
 }
 
@@ -50,6 +51,10 @@ const userSchema = new mongoose.Schema<IUser>({
   isBlocked: {
     type: Boolean,
     default: false,
+  },
+  isVerified: {
+    type: Boolean,
+    default: false, // Por defecto, el correo no está verificado
   },
   createdAt: {
     type: Date,

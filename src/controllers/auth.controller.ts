@@ -94,6 +94,23 @@ export const login = async (req: Request, res: Response) => {
       });
     }
 
+    // Verificar el rol del usuario
+    if (req.path.includes('/admin/login')) {
+      // Si es el login de administradores, solo permitir admin y superadmin
+      if (user.role !== 'admin' && user.role !== 'superadmin') {
+        return res.status(403).json({
+          message: 'Solo los administradores pueden iniciar sesión aquí.',
+        });
+      }
+    } else {
+      // Si es el login de usuarios, solo permitir user
+      if (user.role !== 'user') {
+        return res.status(403).json({
+          message: 'Por favor, inicia sesión desde el panel de administradores.',
+        });
+      }
+    }
+
     // Crear token
     const token = jwt.sign(
       { userId: user._id, role: user.role }, // Incluimos el rol en el token
@@ -233,6 +250,7 @@ export const resetPassword = async (req: Request, res: Response) => {
   }
 };
 
+
 // Función para registrar un nuevo administrador
 export const registerAdmin = async (req: Request, res: Response) => {
   try {
@@ -249,20 +267,20 @@ export const registerAdmin = async (req: Request, res: Response) => {
     // Encriptar contraseña
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Crear nuevo usuario con rol de administrador
+    // Crear nuevo usuario con rol 'admin' por defecto
     const user = new User({
       email,
       password: hashedPassword,
       name,
       phone,
-      role: 'admin', // Asignar el rol de administrador
+      role: 'admin', // Asignar automáticamente el rol 'admin'
     });
 
     await user.save();
 
     // Crear token
     const token = jwt.sign(
-      { userId: user._id, role: user.role }, // Incluimos el rol en el token
+      { userId: user._id, role: user.role },
       config.jwtSecret,
       { expiresIn: '24h' }
     );
@@ -274,7 +292,7 @@ export const registerAdmin = async (req: Request, res: Response) => {
       email: user.email,
       phone: user.phone,
       points: user.points,
-      role: user.role, // Incluimos el rol en la respuesta
+      role: user.role,
     };
 
     res.status(201).json({

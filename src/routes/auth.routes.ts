@@ -1,25 +1,19 @@
 import express from 'express';
 import {
-  register,
   login,
   requestResetCode,
   verifyResetCode,
   resetPassword,
-  registerAdmin,
-  
 } from '../controllers/auth.controller';
+import verificationRoutes from './verification.routes';
 
 const router = express.Router();
 
-// Rutas de autenticación
-router.post('/auth/register', register);
-router.post('/auth/login', login);
+// Rutas comunes de autenticación (para usuarios)
+router.post('/auth/login', login); // Login para usuarios
 router.post('/auth/forgot-password', requestResetCode);
 router.post('/auth/verify-code', verifyResetCode);
 router.post('/auth/reset-password', resetPassword);
-
-
-// Ruta para registrar un administrador
-router.post('/auth/register-admin', registerAdmin);
+router.use('/auth', verificationRoutes); // Rutas de verificación
 
 export default router;
