@@ -7,7 +7,9 @@ const productSchema = new Schema({
   price: { type: Number, required: true },
   stock: { type: Number, required: true },
   available: { type: Boolean, default: true },
-  image: String,
+  images: [{ type: String }], // Array de URLs de imágenes
+  mainImage: { type: String }, // URL de la imagen principal
+  categories: [{ type: String }], // Nuevo campo para categorías
 }, { timestamps: true });
 
 export default mongoose.model('Product', productSchema);

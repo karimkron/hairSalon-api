@@ -29,14 +29,26 @@ export const getProducts = async (req: Request, res: Response) => {
 
 export const createProduct = async (req: Request, res: Response) => {
   try {
-    const { name, brand, description, price, stock, available } = req.body;
-    let imageUrl = '';
+    const { name, brand, description, price, stock, available, mainImageIndex, categories } = req.body;
+    const images = req.files as Express.Multer.File[];
 
-    if (req.file) {
-      const uploadResult = await uploadToCloudinary(req.file);
-      imageUrl = uploadResult.secure_url;
-    }
+    // Subir imágenes a Cloudinary
+    const imageUrls = await Promise.all(
+      images.map(async (file) => {
+        try {
+          const uploadResult = await uploadToCloudinary(file);
+          return uploadResult.secure_url;
+        } catch (error) {
+          console.error('Error subiendo imagen a Cloudinary:', error);
+          throw new Error('Error al subir imágenes');
+        }
+      })
+    );
 
+    // Determinar la imagen principal usando el índice enviado desde el frontend
+    const mainImage = imageUrls[parseInt(mainImageIndex, 10)] || imageUrls[0];
+
+    // Crear el nuevo producto
     const newProduct = new Product({
       name,
       brand,
@@ -44,31 +56,54 @@ export const createProduct = async (req: Request, res: Response) => {
       price: Number(price),
       stock: Number(stock),
       available: available === 'true',
-      image: imageUrl
+      images: imageUrls, // Todas las imágenes
+      mainImage, // Imagen principal seleccionada
+      categories: categories || [], // Nuevo campo para categorías
     });
 
     await newProduct.save();
     res.status(201).json(newProduct);
   } catch (error: any) {
+    console.error('Error al crear el producto:', error);
     res.status(500).json({
       success: false,
-      message: error.message || "Error al crear producto"
+      message: error.message || 'Error al crear producto',
     });
   }
 };
 
-
 export const updateProduct = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, brand, description, price, stock, available } = req.body;
-    let imageUrl = req.body.imageUrl;
+    const { name, brand, description, price, stock, available, mainImageIndex, categories } = req.body;
+    const images = req.files as Express.Multer.File[];
 
-    if (req.file) {
-      const uploadResult = await uploadToCloudinary(req.file);
-      imageUrl = uploadResult.secure_url;
+    // Subir nuevas imágenes a Cloudinary
+    const newImageUrls = await Promise.all(
+      images.map(async (file) => {
+        try {
+          const uploadResult = await uploadToCloudinary(file);
+          return uploadResult.secure_url;
+        } catch (error) {
+          console.error('Error subiendo imagen a Cloudinary:', error);
+          throw new Error('Error al subir imágenes');
+        }
+      })
+    );
+
+    // Obtener el producto existente
+    const existingProduct = await Product.findById(id);
+    if (!existingProduct) {
+      return res.status(404).json({ message: 'Producto no encontrado' });
     }
 
+    // Combinar las imágenes existentes con las nuevas
+    const updatedImages = [...existingProduct.images, ...newImageUrls];
+
+    // Determinar la imagen principal usando el índice enviado desde el frontend
+    const mainImage = updatedImages[parseInt(mainImageIndex, 10)] || updatedImages[0];
+
+    // Actualizar el producto
     const updatedProduct = await Product.findByIdAndUpdate(
       id,
       {
@@ -78,20 +113,52 @@ export const updateProduct = async (req: Request, res: Response) => {
         price: Number(price),
         stock: Number(stock),
         available: available === 'true',
-        image: imageUrl
+        images: updatedImages, // Todas las imágenes
+        mainImage, // Imagen principal seleccionada
+        categories: categories || [], // Nuevo campo para categorías
       },
       { new: true }
     );
 
-    if (!updatedProduct) {
+    res.status(200).json(updatedProduct);
+  } catch (error: any) {
+    console.error('Error al actualizar el producto:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error al actualizar producto',
+    });
+  }
+};
+
+export const deleteImage = async (req: Request, res: Response) => {
+  try {
+    const { id, imageIndex } = req.params;
+
+    // Obtener el producto existente
+    const product = await Product.findById(id);
+    if (!product) {
       return res.status(404).json({ message: 'Producto no encontrado' });
     }
 
+    // Eliminar la imagen del array de imágenes
+    const updatedImages = product.images.filter((_, index) => index !== parseInt(imageIndex, 10));
+
+    // Actualizar el producto
+    const updatedProduct = await Product.findByIdAndUpdate(
+      id,
+      {
+        images: updatedImages,
+        mainImage: updatedImages[0] || '', // Si se elimina la imagen principal, se asigna la primera imagen restante
+      },
+      { new: true }
+    );
+
     res.status(200).json(updatedProduct);
   } catch (error: any) {
+    console.error('Error al eliminar la imagen:', error);
     res.status(500).json({
       success: false,
-      message: error.message || 'Error al actualizar producto'
+      message: error.message || 'Error al eliminar la imagen',
     });
   }
 };
