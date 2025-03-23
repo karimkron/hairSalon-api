@@ -1,9 +1,10 @@
 import { Request, Response } from 'express';
 import { User } from '../models/User';
 import bcrypt from 'bcryptjs';
+import { AuthRequest } from '../types/request';
 
 // Obtener todos los usuarios (solo para superadmin)
-export const getUsers = async (req: Request, res: Response) => {
+export const getUsers = async (req: AuthRequest, res: Response) => {
   try {
     // Verificar si el usuario es superadmin
     if (req.user?.role !== 'superadmin') {
@@ -19,7 +20,7 @@ export const getUsers = async (req: Request, res: Response) => {
 };
 
 // Obtener un usuario por ID (solo para superadmin y admin)
-export const getUserById = async (req: Request, res: Response) => {
+export const getUserById = async (req: AuthRequest, res: Response) => {
   try {
     // Verificar si el usuario es superadmin o admin
     if (req.user?.role !== 'superadmin' && req.user?.role !== 'admin') {
@@ -37,7 +38,7 @@ export const getUserById = async (req: Request, res: Response) => {
 };
 
 // Actualizar un usuario (solo para superadmin y admin)
-export const updateUser = async (req: Request, res: Response) => {
+export const updateUser = async (req: AuthRequest, res: Response) => {
   try {
     // Verificar si el usuario es superadmin o admin
     if (req.user?.role !== 'superadmin' && req.user?.role !== 'admin') {
@@ -64,7 +65,7 @@ export const updateUser = async (req: Request, res: Response) => {
 };
 
 // Modificar la contraseña de un usuario (solo para superadmin y admin)
-export const updatePassword = async (req: Request, res: Response) => {
+export const updatePassword = async (req: AuthRequest, res: Response) => {
   try {
     // Verificar si el usuario es superadmin o admin
     if (req.user?.role !== 'superadmin' && req.user?.role !== 'admin') {
@@ -95,7 +96,7 @@ export const updatePassword = async (req: Request, res: Response) => {
 };
 
 // Bloquear/desbloquear un usuario (solo para superadmin)
-export const toggleBlockUser = async (req: Request, res: Response) => {
+export const toggleBlockUser = async (req: AuthRequest, res: Response) => {
   try {
     // Verificar si el usuario es superadmin
     if (req.user?.role !== 'superadmin') {
@@ -123,7 +124,7 @@ export const toggleBlockUser = async (req: Request, res: Response) => {
 };
 
 // Eliminar un usuario (solo para superadmin)
-export const deleteUser = async (req: Request, res: Response) => {
+export const deleteUser = async (req: AuthRequest, res: Response) => {
   try {
     // Verificar si el usuario es superadmin
     if (req.user?.role !== 'superadmin') {

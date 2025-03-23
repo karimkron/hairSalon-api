@@ -1,4 +1,4 @@
-import express from 'express';
+import express = require('express');
 import mongoose from 'mongoose';
 import cors from 'cors';
 import { config } from './config/env';  // Importamos la configuración de variables de entorno
@@ -10,6 +10,8 @@ import userRoutes from './routes/user.routes';  // Importamos las rutas de usuar
 import userAuthRoutes from './routes/userAuth.routes';  // Importamos las rutas de autenticación de usuarios
 import adminAuthRoutes from './routes/adminAuth.routes';  // Importamos las rutas de autenticación de administradores
 import verificationRoutes from './routes/verification.routes';  // Importamos las rutas de verificación
+import cartRoutes from './routes/cart.routes'; // Importamos las rutas de carrito de compra
+
 
 const app = express();
 
@@ -34,10 +36,19 @@ app.use('/api', adminRoutes);      // Rutas de administradores
 app.use('/api', productRoutes);    // Rutas de productos
 app.use('/api', userRoutes);       // Rutas de usuarios
 app.use('/api', verificationRoutes); // Rutas de verificación
+app.use('/api/products', productRoutes) 
+app.use('/api/cart', cartRoutes); // Ruta de carrito de compra
+;
 
 // Ruta de health check
-app.get('/health', (req, res) => {
+app.get('/health', (req: express.Request, res: express.Response) => {
   res.json({ status: 'ok' });
+});
+
+// Middleware de logs
+app.use((req: express.Request, _: express.Response, next: express.NextFunction) => {
+  console.log(`Solicitud recibida: ${req.method} ${req.url}`);
+  next();
 });
 
 // Función para iniciar el servidor
