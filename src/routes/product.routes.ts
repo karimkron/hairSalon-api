@@ -50,9 +50,7 @@ router.post("/products/categories", authMiddleware, async (req, res) => {
       return res.status(400).json({ message: "La categoría ya existe" });
     }
 
-    // Agregar la categoría a un producto temporal (o a la colección de categorías si tienes una)
-    await Product.updateMany({}, { $addToSet: { categories: category } });
-
+    // No actualizar ningún producto, simplemente retornar la nueva categoría
     res.status(201).json({ category });
   } catch (error: any) {
     res.status(500).json({

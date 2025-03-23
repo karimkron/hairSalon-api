@@ -38,7 +38,8 @@ app.use('/api', userRoutes);       // Rutas de usuarios
 app.use('/api', verificationRoutes); // Rutas de verificación
 app.use('/api/products', productRoutes) 
 app.use('/api/cart', cartRoutes); // Ruta de carrito de compra
-;
+
+
 
 // Ruta de health check
 app.get('/health', (req: express.Request, res: express.Response) => {
