@@ -4,7 +4,7 @@ import Cart from '../models/Cart';
 import Product from '../models/Product';
 import { AuthRequest } from '../types/request';
 import Pickup from '../models/Pickup';
-
+ 
 const router = express.Router();
 
 // Obtener carrito - Corregir populate

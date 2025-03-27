@@ -27,7 +27,7 @@ router.post('/services', authMiddleware, upload.single('image'), (req, _, next) 
 );
 
 
-router.get('/services', authMiddleware, getServices);
+router.get('/services', getServices);
 
 router.put(
   '/services/:id',

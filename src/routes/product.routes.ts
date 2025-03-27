@@ -18,14 +18,14 @@ const upload = multer({
 const router = express.Router();
 
 // Rutas específicas primero
-router.get("/products", authMiddleware, getProducts);
+router.get("/products", getProducts);
 router.post("/products", authMiddleware, upload.array("images", 10), createProduct);
 router.put("/products/:id", authMiddleware, upload.array("images", 10), updateProduct);
 router.delete("/products/:id", authMiddleware, deleteProduct);
 router.delete("/products/:id/images/:imageIndex", authMiddleware, deleteImage);
 
 // Rutas para categorías
-router.get("/products/categories", authMiddleware, async (req, res) => {
+router.get("/products/categories", async (req, res) => {
   try {
     const categories = await Product.distinct("categories"); // Obtener todas las categorías únicas
     res.status(200).json(categories);

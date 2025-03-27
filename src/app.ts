@@ -1,81 +1,155 @@
-import express = require('express');
+import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
-import { config } from './config/env';  // Importamos la configuración de variables de entorno
-import authRoutes from './routes/auth.routes';  // Importamos las rutas de autenticación
-import serviceRoutes from './routes/service.routes';  // Importamos las rutas de servicios
-import adminRoutes from './routes/admin.routes'; // Importamos las nuevas rutas de administradores
-import productRoutes from './routes/product.routes'; // Importamos las rutas de productos
-import userRoutes from './routes/user.routes';  // Importamos las rutas de usuarios
-import userAuthRoutes from './routes/userAuth.routes';  // Importamos las rutas de autenticación de usuarios
-import adminAuthRoutes from './routes/adminAuth.routes';  // Importamos las rutas de autenticación de administradores
-import verificationRoutes from './routes/verification.routes';  // Importamos las rutas de verificación
-import cartRoutes from './routes/cart.routes'; // Importamos las rutas de carrito de compra
+import helmet from 'helmet';
+import compression from 'compression';
+import rateLimit from 'express-rate-limit';
+import winston from 'winston';
+import expressWinston from 'express-winston';
 
+import { config } from './config/env';
+import authRoutes from './routes/auth.routes';
+import serviceRoutes from './routes/service.routes';
+import adminRoutes from './routes/admin.routes';
+import productRoutes from './routes/product.routes';
+import userRoutes from './routes/user.routes';
+import userAuthRoutes from './routes/userAuth.routes';
+import adminAuthRoutes from './routes/adminAuth.routes';
+import verificationRoutes from './routes/verification.routes';
+import cartRoutes from './routes/cart.routes';
+import appointmentRoutes from './routes/appointment.routes';
+import scheduleRoutes from './routes/schedule.routes';
 
 const app = express();
 
-// Configuración de CORS
+// Logging configuration
+const logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.json()
+  ),
+  transports: [
+    new winston.transports.Console({
+      format: winston.format.simple()
+    }),
+    new winston.transports.File({ 
+      filename: 'error.log', 
+      level: 'error' 
+    }),
+    new winston.transports.File({ 
+      filename: 'combined.log' 
+    })
+  ]
+});
+
+// CORS configuration with strict origin
 const corsOptions = {
-  origin: '*', //https://hairsalon-web.onrender.com URL de tu frontend
+  origin: '*', // Explicitly defined allowed origin
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  optionsSuccessStatus: 200
 };
 
-// Middleware
-app.use(cors(corsOptions));
-app.use(express.json({ limit: '10mb' })); // Permitir subir imágenes más grandes
+// Rate limiting middleware
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP, please try again later',
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+});
+
+// Middleware stack
+app.use(helmet()); // Security headers
+app.use(cors(corsOptions)); // CORS protection
+app.use(compression()); // Response compression
+app.use(limiter); // Rate limiting
+app.use(express.json({ limit: '10mb' })); // Limit payload size
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Rutas
-app.use('/api', authRoutes);       // Rutas comunes de autenticación
-app.use('/api', userAuthRoutes);   // Rutas específicas para registro de usuarios
-app.use('/api', adminAuthRoutes);  // Rutas específicas para registro de administradores
-app.use('/api', serviceRoutes);    // Rutas de servicios
-app.use('/api', adminRoutes);      // Rutas de administradores
-app.use('/api', productRoutes);    // Rutas de productos
-app.use('/api', userRoutes);       // Rutas de usuarios
-app.use('/api', verificationRoutes); // Rutas de verificación
-app.use('/api/products', productRoutes) 
-app.use('/api/cart', cartRoutes); // Ruta de carrito de compra
+// Logging middleware
+app.use(expressWinston.logger({
+  winstonInstance: logger,
+  meta: true,
+  colorize: false
+}));
 
+// Routes
+app.use('/api', authRoutes);
+app.use('/api', userAuthRoutes);
+app.use('/api', adminAuthRoutes);
+app.use('/api', serviceRoutes);
+app.use('/api', adminRoutes);
+app.use('/api', productRoutes);
+app.use('/api', userRoutes);
+app.use('/api', verificationRoutes);
+app.use('/api/products', productRoutes);
+app.use('/api/cart', cartRoutes);
+app.use('/api', appointmentRoutes);
+app.use('/api/schedule', scheduleRoutes);
 
-
-// Ruta de health check
+// Health check route
 app.get('/health', (req: express.Request, res: express.Response) => {
-  res.json({ status: 'ok' });
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Middleware de logs
-app.use((req: express.Request, _: express.Response, next: express.NextFunction) => {
-  console.log(`Solicitud recibida: ${req.method} ${req.url}`);
-  next();
+// Error handling middleware
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  // Log the error
+  logger.error(err.message, { 
+    stack: err.stack,
+    method: req.method,
+    path: req.path
+  });
+
+  // Determine error type and appropriate status code
+  const statusCode = 
+    err.name === 'ValidationError' ? 400 :
+    err.name === 'UnauthorizedError' ? 401 :
+    err.name === 'ForbiddenError' ? 403 :
+    500;
+
+  res.status(statusCode).json({ 
+    success: false,
+    message: statusCode === 500 ? 'Internal Server Error' : err.message,
+    ...(process.env.NODE_ENV === 'development' && { 
+      error: err.message,
+      stack: err.stack 
+    })
+  });
 });
 
-// Función para iniciar el servidor
+// Server startup function
 const startServer = async () => {
   try {
-    console.log('Conectando a MongoDB...');
-    await mongoose.connect(config.mongoUri);
-    console.log('Conectado a MongoDB con éxito!');
+    logger.info('Connecting to MongoDB...');
+    await mongoose.connect(config.mongoUri, {
+      retryWrites: true,
+      w: 'majority'
+    });
+    logger.info('Successfully connected to MongoDB');
 
-    // Middleware para loggear las solicitudes
-    app.use((req, _, next) => {
-      console.log(`Solicitud recibida: ${req.method} ${req.url}`);
-      next();
+    const server = app.listen(config.port, () => {
+      logger.info(`Server running on port ${config.port}`);
     });
 
-    // Iniciar el servidor
-    app.listen(config.port, () => {
-      console.log(`Servidor corriendo en el puerto ${config.port}`);
+    // Graceful shutdown
+    process.on('SIGTERM', () => {
+      logger.info('SIGTERM received. Shutting down gracefully');
+      server.close(() => {
+        logger.info('Process terminated');
+        process.exit(0);
+      });
     });
   } catch (error) {
-    console.error('Error al iniciar el servidor:', error);
+    logger.error('Failed to start server', error);
     process.exit(1);
   }
 };
 
-// Iniciar el servidor
+// Initialize server
 startServer();
 
 export default app;

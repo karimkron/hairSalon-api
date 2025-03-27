@@ -74,3 +74,22 @@ export const sendVerificationCode = async (email: string, code: string) => {
 
   await transporter.sendMail(mailOptions);
 };
+
+export const sendBookingConfirmation = async (email: string, appointment: { date: Date; time: string; services: string[] }) => {
+  const mailOptions = {
+    from: config.emailFrom,
+    to: email,
+    subject: '✅ Confirmación de Reserva - Peluquería',
+    html: `
+      <div style="font-family: Arial, sans-serif; padding: 20px;">
+        <h2 style="color: #B45309;">¡Reserva Confirmada!</h2>
+        <p>Fecha: ${appointment.date.toLocaleDateString('es-ES')}</p>
+        <p>Hora: ${appointment.time}</p>
+        <p>Servicios: ${appointment.services.join(', ')}</p>
+        <p>Gracias por elegirnos. 🎉</p>
+      </div>
+    `,
+  };
+
+  await transporter.sendMail(mailOptions);
+};
