@@ -6,6 +6,8 @@ import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import winston from 'winston';
 import expressWinston from 'express-winston';
+import cluster from 'cluster';
+import os from 'os';
 
 import { config } from './config/env';
 import authRoutes from './routes/auth.routes';
@@ -19,137 +21,140 @@ import verificationRoutes from './routes/verification.routes';
 import cartRoutes from './routes/cart.routes';
 import appointmentRoutes from './routes/appointment.routes';
 import scheduleRoutes from './routes/schedule.routes';
+import availabilityRoutes from './routes/availability.routes';
+import adminAppointmentRoutes from './routes/adminAppointment.routes';
 
-const app = express();
+// Configuración de Redis
 
-// Logging configuration
-const logger = winston.createLogger({
-  level: 'info',
-  format: winston.format.combine(
-    winston.format.timestamp(),
-    winston.format.json()
-  ),
-  transports: [
-    new winston.transports.Console({
-      format: winston.format.simple()
-    }),
-    new winston.transports.File({ 
-      filename: 'error.log', 
-      level: 'error' 
-    }),
-    new winston.transports.File({ 
-      filename: 'combined.log' 
-    })
-  ]
-});
 
-// CORS configuration with strict origin
-const corsOptions = {
-  origin: '*', // Explicitly defined allowed origin
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true,
-  optionsSuccessStatus: 200
-};
+if (cluster.isPrimary && process.env.NODE_ENV !== 'development') {
+  const numCPUs = os.cpus().length;
+  for (let i = 0; i < numCPUs; i++) cluster.fork();
+  cluster.on('exit', (worker) => cluster.fork());
+} else {
+  const app = express();
 
-// Rate limiting middleware
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later',
-  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-});
+  // Aumentar límites del sistema
+  require('http').globalAgent.maxSockets = Infinity;
+  require('https').globalAgent.maxSockets = Infinity;
 
-// Middleware stack
-app.use(helmet()); // Security headers
-app.use(cors(corsOptions)); // CORS protection
-app.use(compression()); // Response compression
-app.use(limiter); // Rate limiting
-app.use(express.json({ limit: '10mb' })); // Limit payload size
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-// Logging middleware
-app.use(expressWinston.logger({
-  winstonInstance: logger,
-  meta: true,
-  colorize: false
-}));
-
-// Routes
-app.use('/api', authRoutes);
-app.use('/api', userAuthRoutes);
-app.use('/api', adminAuthRoutes);
-app.use('/api', serviceRoutes);
-app.use('/api', adminRoutes);
-app.use('/api', productRoutes);
-app.use('/api', userRoutes);
-app.use('/api', verificationRoutes);
-app.use('/api/products', productRoutes);
-app.use('/api/cart', cartRoutes);
-app.use('/api', appointmentRoutes);
-app.use('/api/schedule', scheduleRoutes);
-
-// Health check route
-app.get('/health', (req: express.Request, res: express.Response) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
-// Error handling middleware
-app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  // Log the error
-  logger.error(err.message, { 
-    stack: err.stack,
-    method: req.method,
-    path: req.path
+  // Configuración de logs
+  const logger = winston.createLogger({
+    level: 'info',
+    format: winston.format.combine(
+      winston.format.timestamp(),
+      winston.format.json()
+    ),
+    transports: [
+      new winston.transports.Console({
+        format: winston.format.simple()
+      }),
+      new winston.transports.File({ 
+        filename: 'error.log', 
+        level: 'error' 
+      }),
+      new winston.transports.File({ 
+        filename: 'combined.log' 
+      })
+    ]
   });
 
-  // Determine error type and appropriate status code
-  const statusCode = 
-    err.name === 'ValidationError' ? 400 :
-    err.name === 'UnauthorizedError' ? 401 :
-    err.name === 'ForbiddenError' ? 403 :
-    500;
+  // Configurar CORS
+  app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true
+  }));
 
-  res.status(statusCode).json({ 
-    success: false,
-    message: statusCode === 500 ? 'Internal Server Error' : err.message,
-    ...(process.env.NODE_ENV === 'development' && { 
-      error: err.message,
-      stack: err.stack 
-    })
-  });
-});
+  // Configurar rate limiting
+  app.use(rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 1000,
+    message: 'Demasiadas solicitudes desde esta IP'
+  }));
 
-// Server startup function
-const startServer = async () => {
-  try {
-    logger.info('Connecting to MongoDB...');
-    await mongoose.connect(config.mongoUri, {
-      retryWrites: true,
-      w: 'majority'
+  // Middleware esencial
+  app.use(helmet());
+  app.use(compression());
+  app.use(express.json({ limit: '10mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+  // Logging de solicitudes
+  app.use(expressWinston.logger({
+    winstonInstance: logger,
+    meta: true,
+    colorize: false
+  }));
+
+  // Registrar rutas
+  app.use('/api/cart', cartRoutes);
+  app.use('/api/schedule', scheduleRoutes);
+  app.use('/api', [
+    authRoutes,
+    userAuthRoutes,
+    adminAuthRoutes,
+    serviceRoutes,
+    adminRoutes,
+    productRoutes,
+    userRoutes,
+    adminAppointmentRoutes,
+    verificationRoutes,
+    appointmentRoutes,
+    availabilityRoutes
+  ]);
+
+  // Ruta de estado
+  app.get('/health', (req, res) => {
+    res.json({
+      status: 'ok',
+      connections: mongoose.connections.length,
     });
-    logger.info('Successfully connected to MongoDB');
+  });
 
+  // Manejo de errores
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    logger.error(err.stack);
+    res.status(500).json({
+      success: false,
+      message: process.env.NODE_ENV === 'production' 
+        ? 'Error interno del servidor' 
+        : err.message
+    });
+  });
+
+  // Conexión a MongoDB
+  const connectDB = async () => {
+    try {
+      await mongoose.connect(config.mongoUri, {
+        retryWrites: true,
+        w: 'majority',
+        maxPoolSize: 100,
+        serverSelectionTimeoutMS: 5000,
+        socketTimeoutMS: 45000
+      });
+      logger.info('Conexión exitosa a MongoDB');
+    } catch (error) {
+      logger.error('Error de conexión a MongoDB:', error);
+      process.exit(1);
+    }
+  };
+
+  // Iniciar servidor
+  const startServer = async () => {
+    await connectDB();
     const server = app.listen(config.port, () => {
-      logger.info(`Server running on port ${config.port}`);
+      logger.info(`Servidor ejecutándose en puerto ${config.port}`);
+      server.maxConnections = Infinity;
     });
 
-    // Graceful shutdown
     process.on('SIGTERM', () => {
-      logger.info('SIGTERM received. Shutting down gracefully');
-      server.close(() => {
-        logger.info('Process terminated');
+      server.close(async () => {
+        await mongoose.disconnect();
         process.exit(0);
       });
     });
-  } catch (error) {
-    logger.error('Failed to start server', error);
-    process.exit(1);
-  }
-};
+  };
 
-// Initialize server
-startServer();
-
-export default app;
+  startServer();
+}

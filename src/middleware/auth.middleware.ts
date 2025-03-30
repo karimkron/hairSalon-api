@@ -47,11 +47,18 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
     // Verificación de token
     let decoded;
     try {
+      // Verificamos el token, pero aceptamos diferentes estructuras
       decoded = jwt.verify(token, config.jwtSecret) as { 
         userId: string; 
-        role: string;
-        email: string;
+        role?: string;
+        email?: string;
       };
+      
+      // Aseguramos que al menos tengamos un userId
+      if (!decoded.userId) {
+        console.warn(`Token sin userId de IP: ${clientIp}`);
+        return res.status(401).json({ message: 'Token inválido: falta información de usuario' });
+      }
     } catch (error) {
       if (error instanceof jwt.TokenExpiredError) {
         console.warn(`Token expirado de IP: ${clientIp}`);
@@ -76,8 +83,8 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
       userCache.set(decoded.userId, user);
     }
 
-    // Solo verificar email si no es superadmin
-    if (user.role !== 'superadmin' && user.email !== decoded.email) {
+    // Solo verificar email si el token incluye email y no es superadmin
+    if (user.role !== 'superadmin' && decoded.email && user.email !== decoded.email) {
       console.warn(`Email no coincide para usuario no superadmin`);
       return res.status(403).json({ message: 'Credenciales inválidas' });
     }
@@ -95,7 +102,7 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
     // Asignar información de usuario
     req.user = { 
       id: decoded.userId, 
-      role: decoded.role,
+      role: decoded.role || user.role, // Usar el role del token o el de la base de datos
       email: user.email
     };
 

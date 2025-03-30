@@ -1,16 +1,19 @@
 import mongoose from 'mongoose';
 
-// Extended interface to include validation methods
 interface IAppointment extends mongoose.Document {
   user: mongoose.Types.ObjectId;
   services: mongoose.Types.ObjectId[];
   date: Date;
   time: string;
   totalDuration: number;
-  status: 'pending' | 'confirmed' | 'cancelled';
-  
-  // Optional method for custom validation
-  validateAppointmentDate(): boolean;
+  status: 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'needsRescheduling';
+  notes: string;
+  cancellationReason?: string;
+  cancelledAt?: Date;
+  reminderSent: boolean;
+  reminderSentAt?: Date;
+  createdAt: Date;
+  updatedAt?: Date;
 }
 
 const appointmentSchema = new mongoose.Schema<IAppointment>({
@@ -18,79 +21,103 @@ const appointmentSchema = new mongoose.Schema<IAppointment>({
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'User', 
     required: true,
-    immutable: true, // Prevent changing the user after creation
-    onDelete: 'cascade' // Cascade delete related appointments
+    immutable: true
   },
   services: [{ 
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'Service', 
-    required: true,
-    onDelete: 'cascade' // Cascade delete if service is removed
+    required: true
   }],
   date: { 
     type: Date, 
     required: true,
     validate: {
       validator: function(value: Date) {
-        // Ensure date is not in the past
         return value >= new Date(new Date().setHours(0, 0, 0, 0));
       },
-      message: 'Appointment date cannot be in the past'
+      message: 'La fecha de la cita no puede estar en el pasado'
     }
   },
   time: { 
     type: String, 
     required: true,
-    match: [/^([01]\d|2[0-3]):([0-5]\d)$/, 'Invalid time format. Use HH:MM (24-hour format)'],
-    validate: {
-      validator: function(value: string) {
-        // Optional: Add additional time validation if needed
-        const [hours, minutes] = value.split(':').map(Number);
-        return hours >= 0 && hours < 24 && minutes >= 0 && minutes < 60;
-      },
-      message: 'Invalid time'
-    }
+    match: [/^([01]\d|2[0-3]):([0-5]\d)$/, 'Formato de hora inválido']
   },
   totalDuration: { 
     type: Number, 
     required: true,
-    min: [1, 'Duration must be at least 1 minute'],
-    max: [480, 'Maximum appointment duration is 8 hours (480 minutes)']
+    min: [1, 'La duración debe ser de al menos 1 minuto'],
+    max: [480, 'La duración máxima de una cita es de 8 horas']
   },
   status: { 
     type: String, 
-    enum: {
-      values: ['pending', 'confirmed', 'cancelled'],
-      message: '{VALUE} is not a valid status'
-    }, 
-    default: 'pending',
-    required: true
+    enum: ['pending', 'confirmed', 'completed', 'cancelled', 'needsRescheduling'],
+    default: 'pending'
+  },
+  notes: {
+    type: String,
+    default: ''
+  },
+  cancellationReason: {
+    type: String
+  },
+  cancelledAt: {
+    type: Date
+  },
+  reminderSent: {
+    type: Boolean,
+    default: false
+  },
+  reminderSentAt: {
+    type: Date
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now,
+    immutable: true
+  },
+  updatedAt: {
+    type: Date
   }
 }, {
-  timestamps: true, // Automatically add createdAt and updatedAt fields
-  optimisticConcurrency: true // Enable optimistic locking
+  timestamps: false, // Gestionamos manualmente las marcas de tiempo
+  optimisticConcurrency: true
 });
 
-// Compound index for efficient querying
+// Índices para mejorar el rendimiento en consultas comunes
 appointmentSchema.index({ date: 1, time: 1 });
 appointmentSchema.index({ user: 1, date: 1 });
-appointmentSchema.index({ status: 1, date: 1 });
+appointmentSchema.index({ status: 1 });
+appointmentSchema.index({ reminderSent: 1, date: 1 });
 
-// Pre-save middleware for additional validation
-appointmentSchema.pre('save', function(next) {
-  // Example: Prevent booking conflicting appointments
-  this.validateAppointmentDate();
-  next();
+// Método virtual para fecha y hora completas
+appointmentSchema.virtual('dateTime').get(function() {
+  if (!this.date || !this.time) return null;
+  
+  const [hours, minutes] = this.time.split(':').map(Number);
+  const dateTime = new Date(this.date);
+  dateTime.setHours(hours, minutes, 0, 0);
+  
+  return dateTime;
 });
 
-// Method to validate appointment date and time
-appointmentSchema.methods.validateAppointmentDate = function() {
-  // Additional custom validation logic can be added here
-  if (this.date < new Date()) {
-    throw new Error('Appointment cannot be scheduled in the past');
-  }
-  return true;
+// Método para verificar si una cita está próxima (menos de 24 horas)
+appointmentSchema.methods.isUpcoming = function(hoursThreshold = 24): boolean {
+  const appointmentDate = this.dateTime;
+  if (!appointmentDate) return false;
+  
+  const now = new Date();
+  const hoursDifference = (appointmentDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+  
+  return hoursDifference > 0 && hoursDifference <= hoursThreshold;
 };
 
-// Create the model with type safety
+// Método para verificar si una cita ya pasó
+appointmentSchema.methods.hasPassed = function(): boolean {
+  const appointmentDate = this.dateTime;
+  if (!appointmentDate) return false;
+  
+  return appointmentDate < new Date();
+};
+
 export const Appointment = mongoose.model<IAppointment>('Appointment', appointmentSchema);

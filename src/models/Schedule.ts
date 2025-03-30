@@ -1,47 +1,55 @@
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
 
-interface IDailySchedule {
-  openingAM: string;
-  closingAM: string;
+interface DailySchedule {
+  closed: boolean;
+  openingAM?: string;
+  closingAM?: string;
   openingPM?: string;
   closingPM?: string;
-  closed: boolean;
 }
 
-interface ISpecialDay {
+interface SpecialDay {
   date: Date;
-  reason: string;
-  schedule: IDailySchedule;
+  schedule: DailySchedule;
 }
 
-interface ISchedule {
+export interface ISchedule extends mongoose.Document {
   regularHours: {
-    [key: string]: IDailySchedule; // Lunes, Martes..., Domingo
+    lunes: DailySchedule;
+    martes: DailySchedule;
+    miercoles: DailySchedule;
+    jueves: DailySchedule;
+    viernes: DailySchedule;
+    sabado: DailySchedule;
+    domingo: DailySchedule;
   };
-  specialDays: ISpecialDay[];
+  specialDays: SpecialDay[];
 }
 
-const dailyScheduleSchema = new mongoose.Schema<IDailySchedule>({
-  openingAM: { type: String, required: true },
-  closingAM: { type: String, required: true },
-  openingPM: String,
-  closingPM: String,
-  closed: { type: Boolean, default: false }
+const dailyScheduleSchema = new mongoose.Schema<DailySchedule>({
+  closed: { type: Boolean, required: true, default: false },
+  openingAM: { type: String },
+  closingAM: { type: String },
+  openingPM: { type: String },
+  closingPM: { type: String },
 });
 
-const specialDaySchema = new mongoose.Schema<ISpecialDay>({
+const specialDaySchema = new mongoose.Schema<SpecialDay>({
   date: { type: Date, required: true },
-  reason: { type: String, required: true },
-  schedule: dailyScheduleSchema
+  schedule: { type: dailyScheduleSchema, required: true },
 });
 
 const scheduleSchema = new mongoose.Schema<ISchedule>({
   regularHours: {
-    type: Map,
-    of: dailyScheduleSchema,
-    required: true
+    lunes: { type: dailyScheduleSchema, required: true },
+    martes: { type: dailyScheduleSchema, required: true },
+    miercoles: { type: dailyScheduleSchema, required: true },
+    jueves: { type: dailyScheduleSchema, required: true },
+    viernes: { type: dailyScheduleSchema, required: true },
+    sabado: { type: dailyScheduleSchema, required: true },
+    domingo: { type: dailyScheduleSchema, required: true },
   },
-  specialDays: [specialDaySchema]
+  specialDays: [specialDaySchema],
 });
 
-export const Schedule = mongoose.model<ISchedule>('Schedule', scheduleSchema);
+export const Schedule = mongoose.model<ISchedule>("Schedule", scheduleSchema);

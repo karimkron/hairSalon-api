@@ -1,28 +1,7 @@
 import { Request, Response } from 'express';
 import { Schedule } from '../models/Schedule';
-
-interface DailySchedule {
-  openingAM: string;
-  closingAM: string;
-  openingPM?: string;
-  closingPM?: string;
-  closed: boolean;
-}
-
-interface SpecialDay {
-  date: Date;
-  reason: string;
-  schedule: DailySchedule;
-}
-
-// Función para normalizar nombres de días (ej: "Miércoles" → "miercoles")
-const normalizeDayName = (dayName: string): string => {
-  return dayName.toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/sábado/g, "sabado")
-    .replace(/domingo/g, "domingo");
-};
+import { scheduleService } from '../services/schedule.service';
+import { AuthRequest } from '../types/request';
 
 export const getSchedule = async (req: Request, res: Response) => {
   try {
@@ -36,10 +15,12 @@ export const getSchedule = async (req: Request, res: Response) => {
     }
 
     // Normalizar nombres de días en regularHours
-    const normalizedRegularHours: Record<string, DailySchedule> = {};
+    const normalizedRegularHours: Record<string, any> = {};
     Object.entries(schedule.regularHours).forEach(([dayName, schedule]) => {
-      const normalizedDay = normalizeDayName(dayName);
-      normalizedRegularHours[normalizedDay] = schedule as DailySchedule;
+      const normalizedDay = dayName.toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+      normalizedRegularHours[normalizedDay] = schedule;
     });
 
     // Formatear fechas en specialDays
@@ -62,27 +43,62 @@ export const getSchedule = async (req: Request, res: Response) => {
   }
 };
 
-export const updateSchedule = async (req: Request, res: Response) => {
+export const updateSchedule = async (req: AuthRequest, res: Response) => {
   try {
     const { regularHours, specialDays } = req.body;
+    
+    // Verificar permisos (solo administradores pueden actualizar el horario)
+    if (req.user?.role !== 'admin' && req.user?.role !== 'superadmin') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'No tienes permiso para actualizar el horario' 
+      });
+    }
 
-    // Normalizar nombres de días en regularHours antes de guardar
-    const normalizedRegularHours: Record<string, DailySchedule> = {};
+    // Normalizar nombres de días en regularHours
+    const normalizedRegularHours: Record<string, any> = {};
     Object.entries(regularHours).forEach(([dayName, schedule]) => {
-      const normalizedDay = normalizeDayName(dayName);
-      normalizedRegularHours[normalizedDay] = schedule as DailySchedule;
+      const normalizedDay = dayName.toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+      normalizedRegularHours[normalizedDay] = schedule;
     });
 
     // Procesar specialDays (convertir strings de fecha a Date)
+    const previousSchedule = await Schedule.findOne();
+    const existingSpecialDays = previousSchedule?.specialDays || [];
+    
+    // Array para almacenar fechas que necesitan procesamiento de citas
+    const daysToProcess = [];
+    
+    for (const newDay of specialDays) {
+      const newDayDate = new Date(newDay.date);
+      const existingDay = existingSpecialDays.find(d => {
+        return d.date.toISOString().split('T')[0] === newDayDate.toISOString().split('T')[0];
+      });
+      
+      // Si es un día nuevo o hay un cambio de "closed", procesamos citas afectadas
+      if (!existingDay || existingDay.schedule.closed !== newDay.schedule.closed) {
+        daysToProcess.push({
+          date: newDayDate,
+          isClosed: newDay.schedule.closed,
+          reason: newDay.reason || 'Cambio en el horario de la peluquería'
+        });
+      }
+    }
+    
     const processedSpecialDays = specialDays.map((day: any) => ({
       ...day,
       date: new Date(day.date),
       schedule: {
         ...day.schedule,
-        openingAM: day.schedule.openingAM || "00:00",
-        closingAM: day.schedule.closingAM || "00:00",
-        openingPM: day.schedule.openingPM || undefined,
-        closingPM: day.schedule.closingPM || undefined,
+        // Solo asignar valores si el día no está cerrado
+        ...(!day.schedule.closed && { 
+          openingAM: day.schedule.openingAM || "00:00",
+          closingAM: day.schedule.closingAM || "00:00",
+          openingPM: day.schedule.openingPM || undefined,
+          closingPM: day.schedule.closingPM || undefined,
+        }), 
         closed: day.schedule.closed || false
       }
     }));
@@ -97,10 +113,33 @@ export const updateSchedule = async (req: Request, res: Response) => {
       {
         new: true,
         upsert: true,
-        setDefaultsOnInsert: true,
+        setDefaultsOnInsert: false,
         runValidators: true
       }
     ).lean();
+
+    // Procesar las citas afectadas por cambios de horario
+    const processedDays = [];
+    for (const day of daysToProcess) {
+      try {
+        if (day.isClosed) {
+          const result = await scheduleService.processScheduleChange(
+            day.date, 
+            day.isClosed, 
+            day.reason
+          );
+          
+          processedDays.push({
+            date: day.date.toISOString().split('T')[0],
+            affectedAppointments: result.affectedAppointments,
+            message: result.message
+          });
+        }
+      } catch (processError) {
+        console.error(`Error procesando citas para el día ${day.date}:`, processError);
+        // Continuamos con el siguiente día aunque haya errores
+      }
+    }
 
     // Formatear la respuesta
     const response = {
@@ -109,7 +148,8 @@ export const updateSchedule = async (req: Request, res: Response) => {
       specialDays: updatedSchedule?.specialDays.map(day => ({
         ...day,
         date: day.date.toISOString().split('T')[0]
-      }))
+      })),
+      processedDays // Incluir información sobre días procesados
     };
 
     res.status(200).json(response);

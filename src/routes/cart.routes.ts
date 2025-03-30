@@ -13,7 +13,7 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
     const cart = await Cart.findOne({ user: req.user?.id });
     
     if (!cart) return res.status(200).json([]);
-    
+     
     // Utilizamos populate con string en lugar de referencia directa
     const populatedCart = await Cart.findOne({ user: req.user?.id })
       .populate({
