@@ -165,3 +165,62 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+// Actualizar información del usuario actual
+export const updateCurrentUser = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ message: 'No autenticado' });
+    }
+
+    const { name, email, phone } = req.body;
+    
+    // Actualiza solo ciertos campos permitidos para el usuario
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user.id,
+      { name, email, phone },
+      { new: true }
+    ).select('-password');
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: 'Usuario no encontrado' });
+    }
+
+    res.status(200).json(updatedUser);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Actualizar contraseña del usuario actual
+export const updateCurrentUserPassword = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ message: 'No autenticado' });
+    }
+
+    const { currentPassword, newPassword } = req.body;
+    
+    // Verificar la contraseña actual
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ message: 'Usuario no encontrado' });
+    }
+    
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Contraseña actual incorrecta' });
+    }
+    
+    // Encriptar y guardar la nueva contraseña
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+    
+    user.password = hashedPassword;
+    await user.save();
+
+    res.status(200).json({ message: 'Contraseña actualizada correctamente' });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
