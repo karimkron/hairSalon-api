@@ -37,6 +37,28 @@ export const getUserById = async (req: AuthRequest, res: Response) => {
   }
 };
 
+// Nuevo endpoint: Obtener información del usuario actual
+export const getCurrentUser = async (req: AuthRequest, res: Response) => {
+  try {
+    // Verificar que existe un usuario autenticado
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ message: 'No autenticado' });
+    }
+
+    // Obtener información completa del usuario desde la base de datos
+    const user = await User.findById(req.user.id).select('-password');
+    
+    if (!user) {
+      return res.status(404).json({ message: 'Usuario no encontrado' });
+    }
+
+    // Enviar los datos del usuario actual
+    res.status(200).json(user);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // Actualizar un usuario (solo para superadmin y admin)
 export const updateUser = async (req: AuthRequest, res: Response) => {
   try {

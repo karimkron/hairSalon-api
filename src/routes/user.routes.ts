@@ -11,9 +11,13 @@ import {
   updatePassword,
   toggleBlockUser,
   deleteUser,
+  getCurrentUser, // Nuevo controlador para obtener el usuario actual
 } from '../controllers/user.controller';
 
 const router = express.Router();
+
+// Ruta para obtener el usuario actual (me)
+router.get('/users/me', authMiddleware, getCurrentUser);
 
 // Rutas de usuarios (protegidas)
 router.get('/users', authMiddleware, superAdminMiddleware, getUsers); // Solo superadmin
