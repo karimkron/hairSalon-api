@@ -41,7 +41,7 @@ if (cluster.isPrimary && process.env.NODE_ENV !== 'development') {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'", "'unsafe-inline'", "trusted-site.com"],
         styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", "data:", "cloudinary.com"],
+        imgSrc: ["'self'", "data:", "res.cloudinary.com"],
         fontSrc: ["'self'", "fonts.gstatic.com"],
         connectSrc: ["'self'", "https://hairsalon-app.onrender.com"]
       }

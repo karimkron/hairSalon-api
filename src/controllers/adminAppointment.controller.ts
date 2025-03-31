@@ -2,7 +2,10 @@ import { Response } from 'express';
 import { AuthRequest } from "../types/request";
 import mongoose from 'mongoose';
 import { Appointment } from '../models/Appointment';
-import { startOfDay, endOfDay } from 'date-fns';
+import { startOfDay, endOfDay, format, parse, addDays, subDays, getDay, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
+import { es } from 'date-fns/locale';
+import Pickup from '../models/Pickup';
+import Product from '../models/Product';
 
 // Definir interfaces para tipar correctamente
 interface CartProduct {
@@ -41,7 +44,7 @@ export const getAllAppointments = async (req: AuthRequest, res: Response) => {
     }
     
     // Obtener parámetros de filtrado
-    const { from, to, status } = req.query;
+    const { from, to, status, limit } = req.query;
     
     // Construir filtro base
     const filter: any = {};
@@ -71,10 +74,17 @@ export const getAllAppointments = async (req: AuthRequest, res: Response) => {
     }
     
     // Obtener citas con filtros aplicados y buscar productos en el carrito
-    const appointments = await Appointment.find(filter)
+    let query = Appointment.find(filter)
       .populate('user', 'name email phone')
       .populate('services', 'name duration price description category')
       .sort({ date: 1, time: 1 });
+    
+    // Aplicar límite si se proporciona
+    if (limit) {
+      query = query.limit(parseInt(limit as string, 10));
+    }
+    
+    const appointments = await query;
     
     // Buscar los productos del carrito para cada usuario
     const userIds = appointments.map(appointment => {
@@ -205,8 +215,8 @@ export const getAllAppointments = async (req: AuthRequest, res: Response) => {
 
 /**
  * @description Obtiene estadísticas de citas para el dashboard de administración
- * @param req Solicitud HTTP
- * @param res Respuesta HTTP con estadísticas
+ * @param req Solicitud HTTP con parámetros para rangos de fechas
+ * @param res Respuesta HTTP con estadísticas detalladas
  */
 export const getAppointmentsStats = async (req: AuthRequest, res: Response) => {
   try {
@@ -217,55 +227,220 @@ export const getAppointmentsStats = async (req: AuthRequest, res: Response) => {
       });
     }
     
-    // Obtener fecha actual
-    const today = new Date();
-    const startOfToday = startOfDay(today);
-    const endOfToday = endOfDay(today);
+    // Obtener parámetros de filtrado
+    const { from, to } = req.query;
     
-    // Estadísticas para hoy
-    const todaysAppointments = await Appointment.countDocuments({ 
-      date: { $gte: startOfToday, $lte: endOfToday },
-      status: { $ne: 'cancelled' }
-    });
+    // Calcular fechas de inicio y fin
+    let startDate, endDate;
     
-    // Estadísticas por estado
+    if (from) {
+      startDate = startOfDay(new Date(from as string));
+    } else {
+      // Por defecto, 30 días atrás
+      startDate = startOfDay(subDays(new Date(), 30));
+    }
+    
+    if (to) {
+      endDate = endOfDay(new Date(to as string));
+    } else {
+      endDate = endOfDay(new Date());
+    }
+    
+    // Periodo anterior para comparación
+    const periodLength = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    const previousStartDate = subDays(startDate, periodLength);
+    const previousEndDate = subDays(endDate, periodLength);
+
+    // --- Estadísticas por estado ---
     const statusStats = await Appointment.aggregate([
-      { $group: { _id: '$status', count: { $sum: 1 } } }
-    ]);
-    
-    // Estadísticas por mes (últimos 6 meses)
-    const sixMonthsAgo = new Date();
-    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-    
-    const monthlyStats = await Appointment.aggregate([
       { 
         $match: { 
-          date: { $gte: sixMonthsAgo },
+          date: { $gte: startDate, $lte: endDate }
+        } 
+      },
+      { 
+        $group: { 
+          _id: "$status", 
+          count: { $sum: 1 } 
+        } 
+      }
+    ]);
+
+    // Total de citas en periodo actual
+    const totalAppointments = statusStats.reduce((sum, stat) => sum + stat.count, 0);
+    
+    // Total de citas en periodo anterior para calcular cambio porcentual
+    const previousPeriodStats = await Appointment.countDocuments({
+      date: { $gte: previousStartDate, $lte: previousEndDate }
+    });
+    
+    // Calcular cambio porcentual
+    const percentChange = previousPeriodStats > 0 
+      ? ((totalAppointments - previousPeriodStats) / previousPeriodStats) * 100 
+      : 0;
+
+    // --- Estadísticas por día/hora (para encontrar los más populares) ---
+    const appointmentsByDayHour = await Appointment.aggregate([
+      { 
+        $match: { 
+          date: { $gte: startDate, $lte: endDate },
+          status: { $ne: 'cancelled' }
+        } 
+      },
+      {
+        $project: {
+          dayOfWeek: { $dayOfWeek: "$date" }, // 1 (Sunday) to 7 (Saturday)
+          time: 1
+        }
+      },
+      {
+        $group: {
+          _id: { 
+            dayOfWeek: "$dayOfWeek",
+            time: "$time"
+          },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { count: -1 } }
+    ]);
+    
+    // Encontrar día más popular
+    const dayMapping = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+    const dayCountMap = new Map();
+    
+    appointmentsByDayHour.forEach(item => {
+      const day = item._id.dayOfWeek;
+      dayCountMap.set(day, (dayCountMap.get(day) || 0) + item.count);
+    });
+    
+    let mostPopularDay = "No disponible";
+    let maxDayCount = 0;
+    
+    dayCountMap.forEach((count, day) => {
+      if (count > maxDayCount) {
+        maxDayCount = count;
+        mostPopularDay = dayMapping[day - 1]; // Ajustar índice
+      }
+    });
+    
+    // Encontrar hora más popular
+    let mostPopularTime = "No disponible";
+    let maxTimeCount = 0;
+    
+    const timeCountMap = new Map();
+    appointmentsByDayHour.forEach(item => {
+      const time = item._id.time;
+      const count = item.count;
+      
+      timeCountMap.set(time, (timeCountMap.get(time) || 0) + count);
+      
+      if (timeCountMap.get(time) > maxTimeCount) {
+        maxTimeCount = timeCountMap.get(time);
+        mostPopularTime = time;
+      }
+    });
+    
+    // --- Estadísticas por fecha (para gráficos de tendencia) ---
+    const dateRange = eachDayOfInterval({ start: startDate, end: endDate });
+    const dateStats = await Promise.all(
+      dateRange.map(async (date) => {
+        const dayStart = startOfDay(date);
+        const dayEnd = endOfDay(date);
+        
+        const count = await Appointment.countDocuments({
+          date: { $gte: dayStart, $lte: dayEnd },
+          status: { $ne: 'cancelled' }
+        });
+        
+        return {
+          date: format(date, 'yyyy-MM-dd'),
+          count
+        };
+      })
+    );
+    
+    // --- Estadísticas por servicio ---
+    const serviceStats = await Appointment.aggregate([
+      { 
+        $match: { 
+          date: { $gte: startDate, $lte: endDate },
+          status: { $ne: 'cancelled' }
+        } 
+      },
+      { $unwind: "$services" },
+      { 
+        $group: { 
+          _id: "$services", 
+          count: { $sum: 1 } 
+        } 
+      },
+      { $sort: { count: -1 } },
+      { $limit: 10 }
+    ]);
+    
+    // Obtener detalles de los servicios
+    const serviceIds = serviceStats.map(stat => stat._id);
+    const Service = mongoose.model('Service');
+    const services = await Service.find({ _id: { $in: serviceIds } });
+    
+    const serviceDetails = serviceStats.map(stat => {
+      const service = services.find(s => s._id.toString() === stat._id.toString());
+      return {
+        serviceId: stat._id,
+        serviceName: service ? service.name : 'Servicio desconocido',
+        count: stat.count
+      };
+    });
+    
+    // --- Estadísticas por hora (para gráfico de distribución) ---
+    const hourCounts = await Appointment.aggregate([
+      { 
+        $match: { 
+          date: { $gte: startDate, $lte: endDate },
           status: { $ne: 'cancelled' }
         } 
       },
       {
         $group: {
-          _id: { 
-            year: { $year: '$date' }, 
-            month: { $month: '$date' } 
-          },
+          _id: "$time",
           count: { $sum: 1 }
         }
       },
-      { $sort: { '_id.year': 1, '_id.month': 1 } }
+      { $sort: { _id: 1 } }
     ]);
     
-    // Formatear estadísticas para respuesta
+    const byHour = hourCounts.map(item => ({
+      hour: item._id,
+      count: item.count
+    }));
+    
+    // --- Calcular tasa de cancelación ---
+    const cancelledCount = statusStats.find(stat => stat._id === 'cancelled')?.count || 0;
+    const cancellationRate = totalAppointments > 0 
+      ? (cancelledCount / totalAppointments) * 100 
+      : 0;
+    
+    // Formato final de respuesta con todas las estadísticas
     const stats = {
-      today: todaysAppointments,
+      total: totalAppointments,
+      today: await Appointment.countDocuments({ 
+        date: { 
+          $gte: startOfDay(new Date()),
+          $lte: endOfDay(new Date())
+        },
+        status: { $ne: 'cancelled' }
+      }),
+      percentChange,
       byStatus: Object.fromEntries(
-        statusStats.map(stat => [stat._id, stat.count])
+        statusStats.map(stat => [stat._id || 'unknown', stat.count])
       ),
-      monthly: monthlyStats.map(stat => ({
-        month: `${stat._id.year}-${stat._id.month}`,
-        count: stat.count
-      }))
+      byDate: dateStats,
+      byService: serviceDetails,
+      byHour,
+      mostPopularDay,
+      mostPopularTime,
+      cancellationRate
     };
     
     res.status(200).json(stats);
@@ -273,6 +448,113 @@ export const getAppointmentsStats = async (req: AuthRequest, res: Response) => {
     console.error('Error al obtener estadísticas de citas:', error);
     res.status(500).json({ 
       error: 'Error al obtener estadísticas',
+      details: process.env.NODE_ENV === 'development' ? (error as Error).message : undefined
+    });
+  }
+};
+
+/**
+ * @description Obtiene estadísticas de productos para el dashboard
+ * @param req Solicitud HTTP con parámetros para rangos de fechas
+ * @param res Respuesta HTTP con estadísticas de productos
+ */
+export const getProductsStats = async (req: AuthRequest, res: Response) => {
+  try {
+    // Verificar que el usuario sea administrador
+    if (req.user?.role !== 'admin' && req.user?.role !== 'superadmin') {
+      return res.status(403).json({ 
+        error: 'Acceso denegado. Se requiere rol de administrador.' 
+      });
+    }
+    
+    // Obtener parámetros de filtrado
+    const { from, to } = req.query;
+    
+    // Calcular fechas de inicio y fin
+    let startDate, endDate;
+    
+    if (from) {
+      startDate = startOfDay(new Date(from as string));
+    } else {
+      // Por defecto, 30 días atrás
+      startDate = startOfDay(subDays(new Date(), 30));
+    }
+    
+    if (to) {
+      endDate = endOfDay(new Date(to as string));
+    } else {
+      endDate = endOfDay(new Date());
+    }
+    
+    // Estadísticas de productos recogidos y cancelados
+    const pickupsStats = await Pickup.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: startDate, $lte: endDate }
+        }
+      },
+      {
+        $group: {
+          _id: "$status",
+          count: { $sum: 1 },
+          totalQuantity: { $sum: "$quantity" }
+        }
+      }
+    ]);
+    
+    // Productos más populares
+    const topProducts = await Pickup.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: startDate, $lte: endDate },
+          status: 'pending' // Solo productos pendientes de recogida
+        }
+      },
+      {
+        $group: {
+          _id: "$product",
+          count: { $sum: 1 },
+          totalQuantity: { $sum: "$quantity" }
+        }
+      },
+      { $sort: { totalQuantity: -1 } },
+      { $limit: 10 }
+    ]);
+    
+    // Obtener detalles de los productos
+    const productIds = topProducts.map(item => item._id);
+    const products = await Product.find({ _id: { $in: productIds } });
+    
+    const topProductsDetails = topProducts.map(item => {
+      const product = products.find(p => p._id.toString() === item._id.toString());
+      return {
+        productId: item._id,
+        name: product ? product.name : 'Producto desconocido',
+        count: item.count,
+        quantity: item.totalQuantity,
+        image: product?.mainImage || null
+      };
+    });
+    
+    // Calcular total de productos confirmados y cancelados
+    const confirmedProducts = pickupsStats.find(stat => stat._id === 'pending')?.totalQuantity || 0;
+    const completedProducts = pickupsStats.find(stat => stat._id === 'completed')?.totalQuantity || 0;
+    const cancelledProducts = pickupsStats.find(stat => stat._id === 'deleted')?.totalQuantity || 0;
+    
+    // Formato final de respuesta
+    const stats = {
+      confirmed: confirmedProducts,
+      completed: completedProducts,
+      cancelled: cancelledProducts,
+      total: confirmedProducts + completedProducts + cancelledProducts,
+      topProducts: topProductsDetails
+    };
+    
+    res.status(200).json(stats);
+  } catch (error) {
+    console.error('Error al obtener estadísticas de productos:', error);
+    res.status(500).json({ 
+      error: 'Error al obtener estadísticas de productos',
       details: process.env.NODE_ENV === 'development' ? (error as Error).message : undefined
     });
   }

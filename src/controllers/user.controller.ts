@@ -3,7 +3,11 @@ import { User } from '../models/User';
 import bcrypt from 'bcryptjs';
 import { AuthRequest } from '../types/request';
 
-// Obtener todos los usuarios (solo para superadmin)
+/**
+ * Obtiene todos los usuarios con búsqueda y paginación
+ * @param req Solicitud con parámetros de búsqueda y paginación
+ * @param res Respuesta con usuarios filtrados y metadatos de paginación
+ */
 export const getUsers = async (req: AuthRequest, res: Response) => {
   try {
     // Verificar si el usuario es superadmin
@@ -11,11 +15,57 @@ export const getUsers = async (req: AuthRequest, res: Response) => {
       return res.status(403).json({ message: 'No tienes permiso para realizar esta acción' });
     }
 
-    // Obtener todos los usuarios
-    const users = await User.find().select('-password'); // Excluir la contraseña
-    res.status(200).json(users);
+    // Obtener parámetros de paginación y búsqueda
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const search = req.query.search as string || '';
+    const skip = (page - 1) * limit;
+
+    // Construir la consulta de búsqueda
+    let query: any = {};
+    
+    if (search) {
+      // Búsqueda en múltiples campos con expresiones regulares insensibles a mayúsculas/minúsculas
+      query = {
+        $or: [
+          { name: { $regex: search, $options: 'i' } },
+          { email: { $regex: search, $options: 'i' } },
+          { phone: { $regex: search, $options: 'i' } }
+        ]
+      };
+    }
+
+    // Ejecutar la consulta con paginación
+    const [users, total] = await Promise.all([
+      User.find(query)
+        .select('-password') // Excluir la contraseña
+        .sort({ createdAt: -1 }) // Ordenar por fecha de creación descendente
+        .skip(skip)
+        .limit(limit),
+      User.countDocuments(query) // Contar el total de resultados para la paginación
+    ]);
+
+    // Calcular el número total de páginas
+    const totalPages = Math.ceil(total / limit);
+
+    // Enviar respuesta con usuarios y metadatos de paginación
+    res.status(200).json({
+      users,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1
+      }
+    });
   } catch (error: any) {
-    res.status(500).json({ message: error.message });
+    console.error('Error obteniendo usuarios:', error);
+    res.status(500).json({ 
+      message: error.message || 'Error al obtener usuarios',
+      success: false
+    });
   }
 };
 
