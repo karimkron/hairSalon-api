@@ -90,6 +90,20 @@ appointmentSchema.index({ user: 1, date: 1 });
 appointmentSchema.index({ status: 1 });
 appointmentSchema.index({ reminderSent: 1, date: 1 });
 
+// Índice único para prevenir citas duplicadas en la misma fecha y hora
+// Excluimos citas canceladas para permitir reutilizar el horario
+appointmentSchema.index(
+  { 
+    date: 1, 
+    time: 1, 
+    status: 1 
+  }, 
+  { 
+    unique: true, 
+    partialFilterExpression: { status: { $nin: ['cancelled'] } } 
+  }
+);
+
 // Método virtual para fecha y hora completas
 appointmentSchema.virtual('dateTime').get(function() {
   if (!this.date || !this.time) return null;

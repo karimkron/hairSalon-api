@@ -11,6 +11,7 @@ import {
   sendCancellationNotification,
   sendScheduleChangeNotification
 } from '../services/email.service';
+import { appointmentService } from '../services/appointment.service';
 import { isDateInRange } from '../utils/dateUtils';
 import { generateTimeSlots, normalizeDayName } from '../controllers/availability.controller';
 
@@ -75,6 +76,7 @@ const checkTimeConflict = async (
 
   return false; // No hay conflicto
 }
+
 /**
  * @description Verifica si el horario del local permite agendar una cita
  * @param date - Fecha de la cita
@@ -187,6 +189,7 @@ export const createAppointment = async (req: AuthRequest, res: Response) => {
     const { services, date, time, notes } = req.body;
     
     if (!req.user) {
+      await session.abortTransaction();
       return res.status(401).json({ error: 'Usuario no autenticado' });
     }
 
@@ -246,51 +249,92 @@ export const createAppointment = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // Crear nueva cita
-    const newAppointment = new Appointment({
-      user: req.user.id,
-      services: services.map((id: string) => new mongoose.Types.ObjectId(id)),
-      date: appointmentDate,
-      time,
-      totalDuration,
-      status: 'pending',
-      notes: notes || '',
-      reminderSent: false,
-      createdAt: new Date(),
-    });
+    try {
+      // Crear nueva cita
+      const newAppointment = new Appointment({
+        user: req.user.id,
+        services: services.map((id: string) => new mongoose.Types.ObjectId(id)),
+        date: appointmentDate,
+        time,
+        totalDuration,
+        status: 'pending',
+        notes: notes || '',
+        reminderSent: false,
+        createdAt: new Date(),
+      });
 
-    await newAppointment.save({ session });
+      await newAppointment.save({ session });
 
-    // Enviar correo de confirmación
-    if (req.user.email) {
-      try {
-        const user = await User.findById(req.user.id).session(session).lean();
-        
-        if (user) {
-          await sendBookingConfirmation(
-            user.email,
-            { 
-              date: newAppointment.date, 
-              time: newAppointment.time, 
-              services: servicesData.map(s => s.name),
-              userName: user.name
-            }
-          );
+      // Enviar correo de confirmación
+      if (req.user.email) {
+        try {
+          const user = await User.findById(req.user.id).session(session).lean();
+          
+          if (user) {
+            await sendBookingConfirmation(
+              user.email,
+              { 
+                date: newAppointment.date, 
+                time: newAppointment.time, 
+                services: servicesData.map(s => s.name),
+                userName: user.name
+              }
+            );
+          }
+        } catch (emailError) {
+          console.error('Error al enviar confirmación por email:', emailError);
+          // No abortamos la transacción por un error de email
         }
-      } catch (emailError) {
-        console.error('Error al enviar confirmación por email:', emailError);
-        // No abortamos la transacción por un error de email
       }
-    }
 
-    await session.commitTransaction();
-    res.status(201).json({ 
-      success: true, 
-      appointment: {
-        ...newAppointment.toObject(),
-        services: servicesData
+      await session.commitTransaction();
+      res.status(201).json({ 
+        success: true, 
+        appointment: {
+          ...newAppointment.toObject(),
+          services: servicesData
+        }
+      });
+      
+    } catch (error: any) {
+      // Si ocurre un error de duplicado (conflicto de cita)
+      if (error.code === 11000 && error.keyPattern && (error.keyPattern['date'] || error.keyPattern['time'])) {
+        console.log('Detectado conflicto de cita concurrente, intentando resolver automáticamente...');
+        
+        // Intentar resolver el conflicto reubicando la cita
+        const alternativeAppointment = await appointmentService.handleAppointmentConflict(
+          appointmentDate,
+          time,
+          req.user.id,
+          services.map((id: string) => id.toString()),
+          totalDuration,
+          session
+        );
+        
+        if (alternativeAppointment) {
+          await session.commitTransaction();
+          return res.status(200).json({
+            success: true,
+            rescheduled: true,
+            message: 'El horario seleccionado fue reservado simultáneamente. Hemos reprogramado tu cita automáticamente.',
+            appointment: {
+              ...alternativeAppointment.toObject(),
+              services: servicesData
+            }
+          });
+        } else {
+          // No se pudo resolver automáticamente
+          await session.abortTransaction();
+          return res.status(409).json({
+            error: 'El horario seleccionado ya ha sido reservado. Por favor, selecciona otro horario.',
+            concurrent: true
+          });
+        }
       }
-    });
+      
+      // Para otros tipos de errores
+      throw error;
+    }
   } catch (error) {
     await session.abortTransaction();
     console.error('Error al crear cita:', error);
@@ -494,7 +538,52 @@ export const rescheduleAppointment = async (req: AuthRequest, res: Response) => 
     appointment.totalDuration = totalDuration;
     appointment.updatedAt = new Date();
     
-    await appointment.save({ session });
+    try {
+      await appointment.save({ session });
+    } catch (error: any) {
+      // Si ocurre un error de duplicado (conflicto de cita)
+      if (error.code === 11000 && error.keyPattern && (error.keyPattern['date'] || error.keyPattern['time'])) {
+        console.log('Detectado conflicto de reprogramación concurrente, intentando resolver automáticamente...');
+        
+        // Intentar resolver el conflicto reubicando la cita
+        const alternativeAppointment = await appointmentService.handleAppointmentConflict(
+          newDate,
+          newTime,
+          req.user.id,
+          Array.isArray(services) 
+            ? services.map((id: string) => id.toString())
+            : (appointment.services as any).map((s: any) => s._id.toString()),
+          totalDuration,
+          session
+        );
+        
+        if (alternativeAppointment) {
+          // Cancelar la cita original
+          appointment.status = 'cancelled';
+          appointment.cancellationReason = 'Cancelada automáticamente por reprogramación';
+          appointment.cancelledAt = new Date();
+          await appointment.save({ session });
+          
+          await session.commitTransaction();
+          return res.status(200).json({
+            success: true,
+            rescheduled: true,
+            message: 'El horario seleccionado fue reservado simultáneamente. Hemos reprogramado tu cita automáticamente.',
+            appointment: alternativeAppointment.toObject()
+          });
+        } else {
+          // No se pudo resolver automáticamente
+          await session.abortTransaction();
+          return res.status(409).json({
+            error: 'El horario seleccionado ya ha sido reservado. Por favor, selecciona otro horario.',
+            concurrent: true
+          });
+        }
+      }
+      
+      // Para otros tipos de errores
+      throw error;
+    }
 
     // Enviar notificación de reprogramación
     try {

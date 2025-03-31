@@ -243,6 +243,65 @@ export const sendReschedulingNotification = async (
 };
 
 /**
+ * Envía una notificación de reprogramación automática por conflicto de cita
+ */
+export const sendConflictReschedulingNotification = async (
+  email: string, 
+  data: { 
+    oldDate: Date; 
+    oldTime: string;
+    newDate: Date;
+    newTime: string;
+    services: string[];
+    userName: string;
+  }
+) => {
+  const formattedOldDate = formatDate(data.oldDate);
+  const formattedNewDate = formatDate(data.newDate);
+  const servicesList = data.services.map(s => `• ${s}`).join('<br>');
+
+  const mailOptions = {
+    from: config.emailFrom,
+    to: email,
+    subject: '⚠️ Cita Reprogramada Automáticamente - Peluquería',
+    html: `
+      <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto; border: 1px solid #ddd; border-radius: 8px;">
+        <h2 style="color: #B45309; text-align: center;">Cita Reprogramada Automáticamente</h2>
+        
+        <p>Hola ${data.userName},</p>
+        
+        <div style="background-color: #FEF3F2; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #F59E0B;">
+          <p><strong>Aviso importante:</strong> Tu cita fue reservada simultáneamente por otro cliente. Para evitar conflictos, nuestro sistema ha reprogramado automáticamente tu cita.</p>
+        </div>
+        
+        <div style="background-color: #FFF7ED; padding: 15px; border-radius: 5px; margin: 20px 0; text-decoration: line-through;">
+          <h3 style="color: #9CA3AF; margin-top: 0;">Cita Original</h3>
+          <p style="color: #9CA3AF;"><strong>Fecha:</strong> ${formattedOldDate}</p>
+          <p style="color: #9CA3AF;"><strong>Hora:</strong> ${data.oldTime}</p>
+        </div>
+        
+        <div style="background-color: #ECFDF5; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #10B981;">
+          <h3 style="color: #10B981; margin-top: 0;">Nueva Cita</h3>
+         <p><strong>Fecha:</strong> ${formattedNewDate}</p>
+          <p><strong>Hora:</strong> ${data.newTime}</p>
+          <p><strong>Servicios:</strong><br>${servicesList}</p>
+        </div>
+        
+        <p>Si esta nueva fecha y hora no son convenientes para ti, puedes reprogramar o cancelar a través de nuestra aplicación.</p>
+        
+        <p><strong>Recordatorio:</strong> Por favor, llega 5-10 minutos antes de tu cita. Si necesitas cancelar o reprogramar nuevamente, hazlo con al menos 24 horas de anticipación.</p>
+        
+        <div style="text-align: center; margin-top: 30px;">
+          <p>Lamentamos cualquier inconveniente que esto pueda causarte. ¡Gracias por tu comprensión!</p>
+        </div>
+      </div>
+    `,
+  };
+
+  await transporter.sendMail(mailOptions);
+};
+
+/**
  * Envía un recordatorio de cita
  */
 export const sendAppointmentReminder = async (
