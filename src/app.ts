@@ -33,6 +33,22 @@ if (cluster.isPrimary && process.env.NODE_ENV !== 'development') {
   cluster.on('exit', (worker) => cluster.fork());
 } else {
   const app = express();
+  app.set('trust proxy', 1); // Permitir que Express reconozca 'X-Forwarded-For'
+
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "trusted-site.com"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:", "cloudinary.com"],
+        fontSrc: ["'self'", "fonts.gstatic.com"],
+        connectSrc: ["'self'", "https://hairsalon-app.onrender.com"]
+      }
+    },
+    frameguard: { action: 'deny' },  // Anti-Clickjacking
+    hsts: { maxAge: 31536000, includeSubDomains: true } // Strict-Transport-Security
+  }));
 
   // Aumentar límites del sistema
   require('http').globalAgent.maxSockets = Infinity;
