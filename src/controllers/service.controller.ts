@@ -26,7 +26,7 @@ const isValidUrl = (url: string) => {
 
 export const createService = async (req: Request, res: Response) => {
   try {
-    const { name, description, price, points, duration, category, imageUrl } = req.body;
+    const { name, description, price, points, duration, categories, imageUrl } = req.body;
     let finalImageUrl = '';
 
     if (req.file) {
@@ -47,13 +47,18 @@ export const createService = async (req: Request, res: Response) => {
       }
     }
 
+    // Convertir categories a array si viene como string
+    const serviceCategories = Array.isArray(categories) 
+      ? categories 
+      : categories ? [categories] : [];
+
     const newService = new Service({
       name,
       description,
       price: Number(price),
       points: Number(points),
       duration: Number(duration),
-      category,
+      categories: serviceCategories,
       image: finalImageUrl,
     });
 
@@ -79,10 +84,47 @@ export const getServices = async (req: Request, res: Response) => {
   }
 };
 
+// Nueva función para obtener todas las categorías de servicios
+export const getServiceCategories = async (req: Request, res: Response) => {
+  try {
+    const categories = await Service.distinct("categories");
+    res.status(200).json(categories);
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error al obtener categorías'
+    });
+  }
+};
+
+// Nueva función para agregar una categoría
+export const addServiceCategory = async (req: Request, res: Response) => {
+  try {
+    const { category } = req.body;
+    if (!category) {
+      return res.status(400).json({ message: "Categoría requerida" });
+    }
+
+    // Verificar si la categoría ya existe
+    const existingCategory = await Service.findOne({ categories: category });
+    if (existingCategory) {
+      return res.status(400).json({ message: "La categoría ya existe" });
+    }
+
+    // No actualizar ningún servicio, simplemente retornar la nueva categoría
+    res.status(201).json({ category });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: error.message || "Error al agregar categoría",
+    });
+  }
+};
+
 export const updateService = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, description, price, points, duration, category, imageUrl } = req.body;
+    const { name, description, price, points, duration, categories, imageUrl } = req.body;
     let finalImageUrl = '';
 
     if (req.file) {
@@ -98,6 +140,11 @@ export const updateService = async (req: Request, res: Response) => {
       }
     }
 
+    // Convertir categories a array si viene como string
+    const serviceCategories = Array.isArray(categories) 
+      ? categories 
+      : categories ? [categories] : [];
+
     const updatedService = await Service.findByIdAndUpdate(
       id,
       {
@@ -106,7 +153,7 @@ export const updateService = async (req: Request, res: Response) => {
         price: Number(price),
         points: Number(points),
         duration: Number(duration),
-        category,
+        categories: serviceCategories,
         image: finalImageUrl,
       },
       { new: true }

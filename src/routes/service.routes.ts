@@ -4,7 +4,9 @@ import {
   createService, 
   getServices, 
   updateService, 
-  deleteService 
+  deleteService,
+  getServiceCategories,
+  addServiceCategory
 } from '../controllers/service.controller';
 import multer from 'multer';
 
@@ -37,5 +39,9 @@ router.put(
 );
 
 router.delete('/services/:id', authMiddleware, deleteService);
+
+// Nuevas rutas para categorías de servicios
+router.get('/services/categories', getServiceCategories);
+router.post('/services/categories', authMiddleware, addServiceCategory);
 
 export default router;

@@ -5,8 +5,8 @@ export interface IService {
   description: string;
   price: number;
   points: number;
-  duration: number;  // Cambiado a number
-  category: string;
+  duration: number;
+  categories: string[];  // Cambiado de category (string) a categories (array)
   image: string; 
 }
 
@@ -15,8 +15,8 @@ const serviceSchema = new mongoose.Schema<IService>({
   description: { type: String, required: true },
   price: { type: Number, required: true },
   points: { type: Number, required: true },
-  duration: { type: Number, required: true },  // Cambiado a Number
-  category: { type: String, required: true },
+  duration: { type: Number, required: true },
+  categories: [{ type: String }],  // Cambiado a array de strings
   image: { type: String, default: '' },
 });
 
