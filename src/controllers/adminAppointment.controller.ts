@@ -589,10 +589,8 @@ export const completeAppointment = async (req: AuthRequest, res: Response) => {
     }
     
     // Actualizar el estado de la cita a 'completed'
-    appointment.status = 'completed';
-    
-    // Guardar la cita actualizada
-    await appointment.save();
+    await appointment.updateOne({ status: 'completed' }, { runValidators: false });
+
     
     // Buscar el carrito del usuario
     let userCartData: any = null;

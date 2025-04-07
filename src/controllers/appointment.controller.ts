@@ -240,13 +240,50 @@ export const createAppointment = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: businessAvailability.message });
     }
 
-    // Verificar conflictos con otras citas
-    const hasConflict = await checkTimeConflict(appointmentDate, time, totalDuration, undefined, session);
-    if (hasConflict) {
+    // Verificar disponibilidad de la cita (nuevo método mejorado)
+    const appointmentAvailability = await appointmentService.verifyAppointmentAvailability(
+      appointmentDate, 
+      time, 
+      totalDuration,
+      session
+    );
+    
+    if (!appointmentAvailability.available) {
+      // Si hay un conflicto, intentar resolver automáticamente
+      if (appointmentAvailability.conflictExists) {
+        // Intentar resolver el conflicto reubicando la cita
+        const alternativeAppointment = await appointmentService.handleAppointmentConflict(
+          appointmentDate,
+          time,
+          req.user.id,
+          services.map((id: string) => id.toString()),
+          totalDuration,
+          session
+        );
+        
+        if (alternativeAppointment) {
+          await session.commitTransaction();
+          return res.status(200).json({
+            success: true,
+            rescheduled: true,
+            message: 'El horario seleccionado fue reservado simultáneamente. Hemos reprogramado tu cita automáticamente.',
+            appointment: {
+              ...alternativeAppointment.toObject(),
+              services: servicesData
+            }
+          });
+        } else {
+          // No se pudo resolver automáticamente
+          await session.abortTransaction();
+          return res.status(409).json({
+            error: 'El horario seleccionado ya ha sido reservado y no se pudo encontrar un horario alternativo. Por favor, selecciona otro horario.',
+            concurrent: true
+          });
+        }
+      }
+      
       await session.abortTransaction();
-      return res.status(409).json({ 
-        error: 'El horario seleccionado ya está reservado. Por favor, elige otra hora.' 
-      });
+      return res.status(400).json({ error: appointmentAvailability.message || 'No se puede crear la cita en este horario' });
     }
 
     try {
@@ -340,7 +377,7 @@ export const createAppointment = async (req: AuthRequest, res: Response) => {
     console.error('Error al crear cita:', error);
     res.status(500).json({ 
       error: 'Error al crear la cita', 
-      details: (error as Error).message 
+      details: process.env.NODE_ENV === 'development' ? (error as Error).message : undefined 
     });
   } finally {
     session.endSession();
